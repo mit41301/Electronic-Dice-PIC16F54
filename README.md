@@ -7,3 +7,6 @@
 <img width="393" height="267" alt="image" src="https://github.com/user-attachments/assets/2b44d1f7-5b4e-4574-83a2-7a55f6cf3d5f" />
 
 
+http://www.kitsrus.com/zip/kit69.zip  
+
+http://www.kitsrus.com/zip/kit71.zip  
