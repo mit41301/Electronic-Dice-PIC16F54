@@ -1,0 +1,419 @@
+MPASM 01.02.05 Intermediate   DICE1_4.ASM   6-17-1995  21:51:34                 PAGE  1
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                     0001  
+                     0002  LIST P=16C54 
+                     0003 ;                       Dice.asm   version 1.4 June 17, 1995. 
+                     0004 ; 
+                     0005 ; An Electronic Dice demonstration using the Microchip 16C54 PIC 
+                     0006 ; 
+                     0007 ; Produced by:  DIY Electronics 
+                     0008 ;               PO Box 88458 
+                     0009 ;               Sham Shui PO 
+                     0010 ;               Hong Hong    Voice: 852-2725 0610.  Fax: 852-2725 0610 
+                     0011 ; 
+                     0012 ; This program may be freely copied, modified & distributed. 
+                     0013  
+                     0014  
+                     0015         include "p16c5x.inc"           ; pic fuse setting header 
+                     0002 ; P16C5X.INC  Standard Header File, Version 0.1     Microchip Technology, Inc. 
+                     0015  
+  0FFF               0016      __FUSES _CP_OFF & _WDT_ON & _RC_OSC 
+                     0017  
+                     0018 ; ------------------------------------------------------------------------- 
+                     0019 ; The Fuse settings in your Programmer should be set to: 
+                     0020 ; 
+                     0021 ;                       Watchdog timer     => ON 
+                     0022 ;                       Osc Start up timer => ON 
+                     0023 ;                       Code protect       => OFF 
+                     0024 ;                       Osc type           => RC 
+                     0025 ;         
+                     0026 ; ------------------------------------------------------------------------- 
+                     0027 ; Inputs and Outputs: 
+                     0028 ;       Port A 
+                     0029 ;               RA0 - Input  - push button to start Dice Roll 
+                     0030 ;               RA1 - Input  - unused 
+                     0031 ;               RA2 - Input  - unused 
+                     0032 ;               RA3 - Input  - unused 
+                     0033 ;        Port B 
+                     0034 ;               RB0 - Output - drives segment "b" of LED display 
+                     0035 ;               RB1 - Output - drives segment "a" 
+                     0036 ;               RB2 - Output - drives segment "f" 
+                     0037 ;               RB3 - Output - drives segment "g" 
+                     0038 ;               RB4 - Output - drives segment "dec. point" 
+                     0039 ;               RB5 - Output - drives segment "c" 
+                     0040 ;               RB6 - Output - drives segment "d" 
+                     0041 ;               RB7 - Output - drives segment "e" 
+                     0042  
+                     0043 ; define data registers in RAM 
+                     0044  
+                     0045                 org     H'07'                   ; spare 16c54 RAM begins at 07h 
+                     0046  
+  0001               0047 Temp            res     1                       ; misc storage 
+  0001               0048 Temp1           res     1                       ; misc storage 
+  0001               0049 Displ_Pause     res     1                       ; counter for segment hold pause 
+  0001               0050 Segment         res     1                       ; pointer to next segment 
+  0001               0051 Coarse_Delay    res     1                       ; used by general delay routine 
+MPASM 01.02.05 Intermediate   DICE1_4.ASM   6-17-1995  21:51:34                 PAGE  2
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+  0001               0052 Fine_Delay      res     1                       ;   ,,   ,,    ,,    ,,   ,, 
+  0001               0053 Seg_Count       res     1 
+  0001               0054 Flash_Low       res     1                       ; used by Flash delay 
+  0001               0055 Flash_High      res     1                       ;   ,,    ,,   ,, 
+  0001               0056 Button          res     1                       ; store current button status 
+  0001               0057 Sleep_Count     res     1                       ; used by sleep delay 
+  0001               0058 Random_Num      res     1                       ; A number between 1 and six for dice roll 
+                     0059  
+                     0060 ; define Reset Vector 
+                     0061  
+                     0062                 org     H'1FF'                  ; power-on-reset lands here 
+01FF 0A00            0063                 goto    Start                   ; and jumps to start of program 
+                     0064  
+                     0065                 org     H'00'                   ; Start code at bottom of EPROM 
+                     0066  
+                     0067 ; first we check if this is a wakeup call (eg. were we in sleep mode previously?) 
+                     0068  
+0000 0663            0069 Start           btfsc   STATUS,NOT_PD           ; check Power Down bit in status register (1=watchdog, 0=power reset) 
+0001 0A08            0070                 goto    Start00                 ; ok, it was a normal power up 
+                     0071  
+0002 0705            0072                 btfss   PORTA,0                 ; it was a wake-up call, so is the push button pressed? 
+0003 0A06            0073                 goto    Start03                 ; yes, check if it's stuck 
+0004 0070            0074                 clrf    Button                  ; no, clear "button stuck" flag 
+0005 0003            0075                 sleep                           ; and go back to sleep again. 
+                     0076  
+0006 0610            0077 Start03         btfsc   Button,0                ; is button stuck down? 
+0007 0003            0078                 sleep                           ; yes, go back to sleep again. 
+                     0079  
+                     0080 ; next we initialise everything: 
+                     0081                                                 ; watch dog timer is set to wake PIC from sleep 
+                     0082                                                 ; approx once every second 
+0008 0C0F            0083 Start00         movlw   B'00001111'             ; watch dog runs via prescaler, set to divide by 256 
+0009 0002            0084                 option                          ; write this to Option reg. 
+000A 0004            0085                 clrwdt                          ; reset watchdog timer. 
+                     0086  
+                     0087  
+000B 0CFF            0088                 movlw   B'11111111'             ; all PORTA lines are input (RA0 reads push button) 
+000C 0005            0089                 tris    PORTA                   ; (they are tied high on the PCB to stop them floating) 
+000D 0CFF            0090                 movlw   B'11111111'             ; Switch all Port A lines high 
+000E 0025            0091                 movwf   PORTA 
+                     0092  
+000F 0C00            0093                 movlw   B'00000000'             ; switch all of Port B to outputs (to drive the LEDs) 
+0010 0006            0094                 tris    PORTB 
+0011 0C00            0095                 movlw   B'00000000'             ; Switch all Port_B lines low 
+0012 0026            0096                 movwf   PORTB                   ; (so that all the LEDs are off) 
+                     0097  
+0013 0C01            0098                 movlw   H'01'                   ; initialise various registers 
+0014 002F            0099                 movwf   Flash_High 
+0015 002E            0100                 movwf   Flash_Low 
+0016 0C32            0101                 movlw   D'50' 
+0017 0031            0102                 movwf   Sleep_Count 
+0018 0C06            0103                 movlw   H'06' 
+0019 0032            0104                 movwf   Random_Num 
+MPASM 01.02.05 Intermediate   DICE1_4.ASM   6-17-1995  21:51:34                 PAGE  3
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                     0105  
+001A 0510            0106                 bsf     Button,0                ; start with button flag set 
+                     0107  
+001B 0004            0108 Start01         clrwdt                          ; reset watchdog timer 
+001C 0971            0109                 call    Random                  ; increment random number count 
+001D 095E            0110                 call    Flash                   ; flash the decimal point 
+001E 0705            0111                 btfss   PORTA,0                 ; is the button pressed? 
+001F 0A22            0112                 goto    Start02                 ; yes 
+0020 0070            0113                 clrf    Button                  ;  no, clear flag 
+0021 0A1B            0114                 goto    Start01                 ;  and loop back. 
+                     0115  
+0022 0610            0116 Start02         btfsc   Button,0                ; is button stuck down? 
+0023 0A1B            0117                 goto    Start01                 ; yes, loop back 
+0024 0510            0118                 bsf     Button,0                ; no, but now set flag 
+                     0119  
+0025 094D            0120                 call    Roll                    ; roll the dice 
+0026 0C32            0121                 movlw   D'50'                   ; reset sleep counter 
+0027 0031            0122                 movwf   Sleep_Count 
+0028 0C0F            0123                 movlw   H'0F'                   ; pause slightly 
+0029 0944            0124                 call    Delay 
+                     0125  
+                     0126 ; Display digits: As the LED has only one (common) dropping resistor, 
+                     0127 ; we "Multiplex" the pattern on to the display, one segment at a time. 
+                     0128 ; The eye smooths all this into seeing a complete digit. 
+                     0129  
+002A 0212            0130 Display         movf    Random_Num,W            ; get the current random number 
+002B 0982            0131                 call    Look_Up_Digit           ; go get digit pattern 
+002C 0027            0132                 movwf   Temp                    ; save it 
+                     0133                  
+002D 0CFF            0134 Disp01          movlw   H'FF'                   ; set up for display hold time 
+002E 0029            0135                 movwf   Displ_Pause 
+002F 0C07            0136 Disp02          movlw   H'07'                   ; set up for seven segments 
+0030 002A            0137                 movwf   Segment 
+                     0138  
+0031 0004            0139 Disp03          clrwdt                          ; reset watchdog timer 
+0032 020A            0140                 movf    Segment,W               ; get next segment pattern 
+0033 0979            0141                 call    Look_Up_Seg 
+0034 0147            0142                 andwf   Temp,W                  ; mask out this segment 
+0035 0026            0143                 movwf   PORTB                   ;   and display it 
+                     0144  
+0036 0C0F            0145                 movlw   H'0F'                   ; set up for a delay 
+0037 002C            0146                 movwf   Fine_Delay              ; so we can see the segment illuminated 
+0038 02EC            0147 Disp04          decfsz  Fine_Delay              ; is the delay finished? 
+0039 0A38            0148                 goto    Disp04 
+                     0149  
+003A 02EA            0150                 decfsz  Segment,F               ; is this the last segment? 
+003B 0A31            0151                 goto    Disp03                  ;   no, do it again. 
+                     0152  
+003C 02E9            0153                 decfsz  Displ_Pause,F           ; has timing loop finished? 
+003D 0A2F            0154                 goto    Disp02                  ;   no, do it all again. 
+                     0155  
+003E 0066            0156                 clrf    PORTB                   ; yes, clear display 
+003F 0CFF            0157                 movlw   H'FF'                   ; restart flash timer 
+MPASM 01.02.05 Intermediate   DICE1_4.ASM   6-17-1995  21:51:34                 PAGE  4
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0040 002E            0158                 movwf   Flash_Low 
+0041 0C1F            0159                 movlw   H'1F' 
+0042 002F            0160                 movwf   Flash_High 
+                     0161  
+0043 0A1B            0162                 goto    Start01                 ; and do it all again. 
+                     0163  
+                     0164 ;-------------------------------------------------------- 
+                     0165 ; General purpose Delay routine: Feed multiples of 10mS in via "W" reg 
+                     0166  
+0044 002B            0167 Delay           movwf   Coarse_Delay 
+0045 0CFF            0168 Delay01         movlw   H'FF' 
+0046 002C            0169                 movwf   Fine_Delay 
+0047 0004            0170 Delay02         clrwdt                          ; reset watchdog timer 
+0048 02EC            0171                 decfsz  Fine_Delay,F            ; this loop takes approx 10mSec 
+0049 0A47            0172                 goto    Delay02                 ; (300kHz/2/4/256) 
+004A 02EB            0173                 decfsz  Coarse_Delay,F 
+004B 0A45            0174                 goto    Delay01 
+004C 0800            0175                 retlw   0 
+                     0176  
+                     0177 ;----------------------------------------------------------------------------- 
+                     0178 ; Flash segments sequentially to simulate dice rolling. 
+                     0179  
+004D 0C02            0180 Roll            movlw   H'02'                   ; set up for two rolls 
+004E 0028            0181                 movwf   Temp1 
+004F 0C08            0182                 movlw   H'08'                   ; set up segement delay 
+0050 0027            0183                 movwf   Temp 
+                     0184  
+0051 0C06            0185 Roll00          movlw   H'06'                   ; set up for six segements 
+0052 002D            0186                 movwf   Seg_Count 
+                     0187  
+0053 020D            0188 Roll01          movf    Seg_Count,W             ; get next segment count 
+0054 0979            0189                 call    Look_Up_Seg             ; go get LED pattern 
+0055 0026            0190                 movwf   PORTB                   ; write it to port B 
+0056 0207            0191                 movf    Temp,W                  ; wait a while 
+0057 0944            0192                 call    Delay 
+0058 02ED            0193                 decfsz  Seg_Count,F             ; is this the last segment? 
+0059 0A53            0194                 goto    Roll01 
+005A 02E8            0195                 decfsz  Temp1,F                 ; done two rolls yet? 
+005B 0A51            0196                 goto    Roll00 
+005C 0066            0197                 clrf    PORTB                   ; switch off LEDs 
+005D 0800            0198                 retlw   0 
+                     0199  
+                     0200 ;-------------------------------------------------------------------------- 
+                     0201 ; Decimal Point Flash routine. Used to show that PIC is "awake". 
+                     0202 ; If the button hasn't been pressed for fifty flashes, the processor goes 
+                     0203 ; to sleep to conserve power. 
+                     0204  
+005E 02EE            0205 Flash           decfsz   Flash_Low,F            ; has low timer run out? 
+005F 0800            0206                 retlw   0                       ;   no, return 
+0060 0CFF            0207                 movlw   H'FF'                   ;   yes, reset timer 
+0061 002E            0208                 movwf   Flash_Low 
+0062 02EF            0209                 decfsz  Flash_High              ; has high timer run out? 
+0063 0800            0210                 retlw   0                       ;   no, return 
+MPASM 01.02.05 Intermediate   DICE1_4.ASM   6-17-1995  21:51:34                 PAGE  5
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0064 0C1F            0211                 movlw   H'1F'                   ;   yes, reset timer 
+0065 002F            0212                 movwf   Flash_High 
+0066 0C10            0213                 movlw   B'00010000'             ; set up bit pattern for dec point 
+0067 0026            0214                 movwf   PORTB                   ; write it out 
+0068 0C05            0215                 movlw   H'05' 
+0069 0944            0216                 call    Delay                   ; and pause a bit 
+006A 0066            0217                 clrf    PORTB                   ; switch it off again 
+                     0218  
+                     0219 ; is it sleepy time yet? 
+                     0220  
+006B 02F1            0221                 decfsz  Sleep_Count             ; has count expired? 
+006C 0800            0222                 retlw   0                       ; no. 
+                     0223  
+006D 0CFF            0224                 movlw   H'FF'                   ; yes, shut down all ports 
+006E 0005            0225                 tris    PORTA                   ; (make them inputs 
+006F 0006            0226                 tris    PORTB                   ;       to conserve power) 
+0070 0003            0227                 sleep                           ; and goto sleep! 
+                     0228                  
+                     0229 ;---------------------------------------------------------------------------- 
+                     0230 ; Random number generator: We constantly decrement by 1 a number to use as the 
+                     0231 ; number for the dice roll. This happens every time the subroutine is called. 
+                     0232  
+0071 02F2            0233 Random          decfsz  Random_Num              ; has it got to zero? 
+0072 0A76            0234                 goto    Rand01                  ;    no, skip it 
+0073 0C06            0235                 movlw   H'06'                   ;    yes, reset it to 6 
+0074 0032            0236                 movwf   Random_Num 
+0075 0800            0237                 retlw   0                       ; return 
+                     0238  
+0076 0000            0239 Rand01          nop                             ; add some delays so that we spend equal time 
+0077 0000            0240                 nop                             ;   in branch, to make roll truly random. 
+0078 0800            0241                 retlw   0                       ; return 
+                     0242  
+                     0243 ; --------------------------------------------------------------------------- 
+                     0244 ; Look-up tables for LED bit patterns: These use a "computed goto" technique. 
+                     0245 ; The value in "W" is added to the program counter to cause program execution 
+                     0246 ; to jump to the appropriate line. The "Return-with-Literal-in-W" instruction 
+                     0247 ; returns the required value. 
+                     0248  
+0079 01E2            0249 Look_Up_Seg     addwf   PC           ; return bit pattern for sucessive segments 
+007A 0000            0250                 nop                  ;     (we skip the "zero" value) 
+                     0251  
+                     0252  
+007B 0802            0253                 retlw   B'00000010'             ;  a 
+007C 0801            0254                 retlw   B'00000001'             ;  b 
+007D 0820            0255                 retlw   B'00100000'             ;  c 
+007E 0840            0256                 retlw   B'01000000'             ;  d 
+007F 0880            0257                 retlw   B'10000000'             ;  e 
+0080 0804            0258                 retlw   B'00000100'             ;  f 
+0081 0808            0259                 retlw   B'00001000'             ;  g 
+                     0260  
+                     0261 ; ------------------------------------------------------------------------ 
+                     0262  
+0082 01E2            0263 Look_Up_Digit   addwf   PC           ; return bit patterns for each digit (from 1 -> 6) 
+MPASM 01.02.05 Intermediate   DICE1_4.ASM   6-17-1995  21:51:34                 PAGE  6
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0083 0000            0264                 nop                  ;    (we skip the "zero" digit) 
+                     0265  
+                     0266                                         ;                 a 
+0084 0821            0267                 retlw  B'00100001'      ; '1'          xxxxxxx 
+0085 08CB            0268                 retlw  B'11001011'      ; '2'      f  x       x b 
+0086 086B            0269                 retlw  B'01101011'      ; '3'         x   g   x 
+0087 082D            0270                 retlw  B'00101101'      ; '4'           xxxxxx 
+0088 086E            0271                 retlw  B'01101110'      ; '5'      e  x       x c 
+0089 08EE            0272                 retlw  B'11101110'      ; '6'         x       x 
+                     0273                                         ;               xxxxxx 
+                     0274                                         ;                  d 
+                     0275                                         ; 
+                     0276                                         ; bits         76543210 
+                     0277                                         ; segments     edcXgfab    (X = dec point) 
+                     0278  
+                     0279 ; ------------------------------------------------------------------------ 
+                     0280  END 
+                     0281  
+MPASM 01.02.05 Intermediate   DICE1_4.ASM   6-17-1995  21:51:34                 PAGE  7
+
+
+SYMBOL TABLE
+
+LABEL                            VALUE
+
+Button                            0010 
+C                                 0000 
+Coarse_Delay                      000B 
+DC                                0001 
+Delay                             0044 
+Delay01                           0045 
+Delay02                           0047 
+Disp01                            002D 
+Disp02                            002F 
+Disp03                            0031 
+Disp04                            0038 
+Displ_Pause                       0009 
+Display                           002A 
+F                                 0001 
+FSR                               0004 
+Fine_Delay                        000C 
+Flash                             005E 
+Flash_High                        000F 
+Flash_Low                         000E 
+INDF                              0000 
+Look_Up_Digit                     0082 
+Look_Up_Seg                       0079 
+NOT_PD                            0003 
+NOT_TO                            0004 
+PA0                               0005 
+PA1                               0006 
+PA2                               0007 
+PC                                0002 
+PORTA                             0005 
+PORTB                             0006 
+PS0                               0000 
+PS1                               0001 
+PS2                               0002 
+PSA                               0003 
+RTCC                              0001 
+RTE                               0004 
+RTS                               0005 
+Rand01                            0076 
+Random                            0071 
+Random_Num                        0012 
+Roll                              004D 
+Roll00                            0051 
+Roll01                            0053 
+STATUS                            0003 
+Seg_Count                         000D 
+Segment                           000A 
+Sleep_Count                       0011 
+Start                             0000 
+Start00                           0008 
+Start01                           001B 
+Start02                           0022 
+Start03                           0006 MPASM 01.02.05 Intermediate   DICE1_4.ASM   6-17-1995  21:51:34                 PAGE  8
+
+
+SYMBOL TABLE - Continued
+
+LABEL                            VALUE
+
+Temp                              0007 
+Temp1                             0008 
+W                                 0000 
+Z                                 0002 
+_CP_OFF                           0FFF 
+_CP_ON                            0FF7 
+_HS_OSC                           0FFE 
+_LP_OSC                           0FFC 
+_RC_OSC                           0FFF 
+_WDT_OFF                          0FFB 
+_WDT_ON                           0FFF 
+_XT_OSC                           0FFD 
+__16C54                           0001 
+__FUSE_CONFIG_0                   
+
+
+MEMORY USAGE MAP ('X' = Used,  '-' = Unused)
+
+0000 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0040 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+
+0080 : XXXXXXXXXX------ ---------------- ---------------- ----------------
+00C0 : ---------------- ---------------- ---------------- ----------------
+
+0180 : ---------------- ---------------- ---------------- ----------------
+01C0 : ---------------- ---------------- ---------------- ---------------X
+
+All other memory blocks unused.
+
+
+Errors   :    0
+Warnings :    0
+Messages :    0
+
+
