@@ -11,8 +11,8 @@ LIST P=16C54
 ;
 ; Revision      July 25, 1995         V1.11
 
-
-        include "c:\upuc\mpasm121\p16c5x.inc"           ; fuse settings for PICSTART 16B
+        include "p16c5x.inc"           ; pic fuse setting header
+;       include "c:\upuc\mpasm121\p16c5x.inc"           ; fuse settings for PICSTART 16B
      __CONFIG _CP_OFF & _WDT_ON & _RC_OSC
 
 ; -------------------------------------------------------------------------
